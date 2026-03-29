@@ -31,4 +31,3 @@ http://localhost:8000
 ```powershell
 docker exec -it gigaam-ui python3 -c "import torch; print(torch.__version__); print(torch.version.cuda); print(torch.cuda.is_available())"
 ```
-# gigaamui
