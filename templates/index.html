@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GigaAM UI</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 24px; background: #111; color: #eee; }
+    .card { background: #1b1b1b; padding: 16px; border-radius: 12px; margin-bottom: 16px; }
+    button { padding: 10px 14px; border-radius: 8px; border: 0; cursor: pointer; }
+    input[type=file] { margin-bottom: 12px; }
+    pre { white-space: pre-wrap; word-break: break-word; background: #0c0c0c; padding: 12px; border-radius: 8px; }
+    .progress { width: 100%; background: #333; border-radius: 8px; overflow: hidden; height: 18px; }
+    .bar { height: 18px; width: 0%; background: #4caf50; transition: width .3s; }
+    .row { display:flex; gap:12px; flex-wrap:wrap; }
+    a { color:#7cc4ff; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>GigaAM UI</h1>
+    <div id="info">Loading...</div>
+  </div>
+
+  <div class="card">
+    <h2>Распознавание</h2>
+    <input type="file" id="file">
+    <div class="row">
+      <button onclick="startUpload()">Запустить</button>
+      <button onclick="clearTarget('outputs')">Очистить outputs</button>
+      <button onclick="clearTarget('logs')">Очистить logs</button>
+      <button onclick="clearTarget('cache')">Очистить HF cache</button>
+    </div>
+    <p id="statusText">Ожидание</p>
+    <div class="progress"><div class="bar" id="bar"></div></div>
+  </div>
+
+  <div class="card">
+    <h2>Результат</h2>
+    <div id="downloads"></div>
+    <pre id="result"></pre>
+  </div>
+
+<script>
+let pollTimer = null;
+
+async function loadInfo() {
+  const res = await fetch('/api/info');
+  const data = await res.json();
+  document.getElementById('info').innerHTML = '<pre>' + JSON.stringify(data, null, 2) + '</pre>';
+}
+
+async function startUpload() {
+  const fileInput = document.getElementById('file');
+  if (!fileInput.files.length) {
+    alert('Выбери файл');
+    return;
+  }
+  const form = new FormData();
+  form.append('file', fileInput.files[0]);
+  document.getElementById('statusText').textContent = 'Загрузка файла...';
+  document.getElementById('bar').style.width = '1%';
+  document.getElementById('result').textContent = '';
+  document.getElementById('downloads').innerHTML = '';
+  const res = await fetch('/api/transcribe', { method:'POST', body: form });
+  const data = await res.json();
+  if (!data.job_id) {
+    document.getElementById('statusText').textContent = JSON.stringify(data);
+    return;
+  }
+  watchJob(data.job_id);
+}
+
+function watchJob(jobId) {
+  clearInterval(pollTimer);
+  pollTimer = setInterval(async () => {
+    const res = await fetch('/api/status/' + jobId);
+    const job = await res.json();
+    document.getElementById('statusText').textContent = (job.stage || '') + ' | ' + (job.message || '');
+    document.getElementById('bar').style.width = (job.progress || 0) + '%';
+    if (job.status === 'done') {
+      clearInterval(pollTimer);
+      document.getElementById('result').textContent = job.result.text || '';
+      const files = job.result.files || {};
+      document.getElementById('downloads').innerHTML = `
+        <p>
+          <a href="/download/${files.txt}">TXT</a> |
+          <a href="/download/${files.json}">JSON</a> |
+          <a href="/download/${files.srt}">SRT</a>
+        </p>`;
+    }
+    if (job.status === 'error') {
+      clearInterval(pollTimer);
+      document.getElementById('result').textContent = (job.message || '') + '\n\n' + (job.traceback || '');
+      document.getElementById('bar').style.width = '100%';
+    }
+  }, 1500);
+}
+
+async function clearTarget(target) {
+  const res = await fetch('/api/clear', {
+    method:'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({target})
+  });
+  const data = await res.json();
+  alert(JSON.stringify(data));
+  loadInfo();
+}
+
+loadInfo();
+</script>
+</body>
+</html>
