@@ -1,34 +1,77 @@
-# GigaAM UI Fixed
+# GigaAM UI v2.0.0
 
-Почему эта версия отличается:
-- ставит **актуальный GigaAM из GitHub**, а не старый `gigaam 0.1.0` с PyPI;
-- использует Flask вместо Gradio;
-- контейнер стартует без загрузки модели;
-- есть индикаторы прогресса в UI.
+Веб-интерфейс для распознавания русской речи на базе [GigaAM](https://github.com/salute-developers/GigaAM) v3.
 
-## Важно
+## Что нового в v2
 
-Официальный GitHub GigaAM уже содержит модели v3, включая `v3_e2e_rnnt`, а PyPI `gigaam 0.1.0` знает только модели до v2. Поэтому для v3 ставим пакет из GitHub.
+- Пакетная загрузка и обработка аудио/видео
+- Поддержка WEBM, MP4, MKV и других видеоформатов
+- Объединённые SRT/VTT/TXT и ZIP с результатами
+- Безопасная очистка рабочего кэша и TTL заданий
+- Модульная архитектура (`gigaam_ui/`) и тесты (pytest)
 
-## Команды
+## Возможности
 
-```powershell
-docker compose down --remove-orphans
-docker rm -f gigaam-ui 2>$null
-docker image prune -af
-docker builder prune -af
-docker compose build --no-cache
-docker compose up -d --force-recreate
-docker logs -f gigaam-ui
-```
+- Загрузка одного или нескольких аудио/видео файлов
+- Поддержка `.webm`, `.mp4`, `.mkv`, `.mov`, `.avi` и других форматов через FFmpeg
+- Нормализация в WAV, mono, PCM s16le, 16 kHz
+- Пакетная очередь с отдельным статусом каждого файла
+- Изменение порядка файлов перед обработкой (drag-and-drop)
+- Отдельные результаты: TXT, JSON, SRT, VTT
+- Объединённые SRT/VTT/TXT с глобальными таймкодами + ZIP со всеми результатами
+- Безопасная очистка рабочего кэша (без удаления модели GigaAM)
+- Автоочистка завершённых заданий по TTL
 
-Открыть UI:
-
-http://localhost:8000
-
-## Проверка torch
+## Быстрый старт
 
 ```powershell
-docker exec -it gigaam-ui python3 -c "import torch; print(torch.__version__); print(torch.version.cuda); print(torch.cuda.is_available())"
+docker compose build
+docker compose up -d
 ```
-# gigaamui
+
+UI: http://localhost:8000
+
+## Переменные окружения
+
+| Переменная | По умолчанию | Описание |
+|------------|--------------|----------|
+| `MODEL_NAME` | `v3_e2e_rnnt` | Модель GigaAM |
+| `CHUNK_SECONDS` | `20` | Длина чанка для длинных файлов |
+| `MAX_FILE_MB` | `1000` | Лимит размера загрузки |
+| `JOB_TTL_SECONDS` | `3600` | TTL завершённых заданий в памяти |
+| `JOB_TTL_CHECK_INTERVAL` | `60` | Интервал проверки TTL (сек) |
+
+## API
+
+| Endpoint | Описание |
+|----------|----------|
+| `POST /api/transcribe` | Один файл (обратная совместимость) |
+| `POST /api/batch` | Пакетная обработка (`files[]`, опционально `order`) |
+| `GET /api/status/<job_id>` | Статус задания |
+| `POST /api/clear` | Очистка (`workspace`, `outputs`, `logs`, `cache`) |
+| `GET /download/<filename>` | Скачивание результата |
+
+### Очистка
+
+- `workspace` — inputs, outputs, logs, temp, история заданий (модель не удаляется)
+- `cache` — кэш Hugging Face (модель потребует повторной загрузки)
+- Очистка блокируется во время активной обработки (HTTP 409)
+
+## Тесты
+
+```powershell
+pip install -r requirements.txt -r requirements-dev.txt
+pytest -v
+```
+
+Обязательный сценарий WEBM: `tests/test_api.py::test_integration_webm_processing`
+
+## Проверка GPU
+
+```powershell
+docker exec -it gigaam-ui python3 -c "import torch; print(torch.cuda.is_available())"
+```
+
+## Почему GigaAM из GitHub
+
+PyPI `gigaam 0.1.0` поддерживает только модели до v2. Для `v3_e2e_rnnt` пакет устанавливается из GitHub.

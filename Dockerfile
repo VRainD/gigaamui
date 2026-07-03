@@ -11,26 +11,28 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-COPY requirements.txt /app/requirements.txt
+COPY requirements.txt requirements-dev.txt /app/
 RUN python3 -m pip install --upgrade pip setuptools wheel
 
-# Stable CUDA/PyTorch combo. Torch >=2.6 avoids transformers torch.load restriction.
 RUN pip install \
     torch==2.6.0 \
     torchaudio==2.6.0 \
     torchvision==0.21.0 \
     --index-url https://download.pytorch.org/whl/cu124
 
-# Install web app deps first
-RUN pip install -r /app/requirements.txt
+RUN pip install -r /app/requirements.txt -r /app/requirements-dev.txt
 
-# Install CURRENT GigaAM from GitHub main, because PyPI 0.1.0 only exposes v1/v2 model names.
 RUN pip install git+https://github.com/salute-developers/GigaAM.git
 
+COPY gigaam_ui /app/gigaam_ui
 COPY app.py /app/app.py
 COPY templates /app/templates
+COPY tests /app/tests
+COPY pytest.ini /app/pytest.ini
 COPY README.md /app/README.md
 COPY .env.example /app/.env.example
+
+RUN mkdir -p /app/data/inputs /app/data/outputs /app/data/logs /app/data/temp
 
 EXPOSE 8000
 

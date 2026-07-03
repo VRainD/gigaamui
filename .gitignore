@@ -1,0 +1,23 @@
+# Bytecode
+__pycache__/
+*.py[cod]
+
+# Environment
+.env
+.venv/
+venv/
+
+# Data workspace (runtime files)
+data/inputs/*
+data/outputs/*
+data/logs/*
+data/temp/*
+!data/inputs/.gitkeep
+!data/outputs/.gitkeep
+
+# Archives
+*.zip
+
+# IDE
+.idea/
+.vscode/
