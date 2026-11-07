@@ -1,0 +1,8 @@
+# Reuse the already-installed CUDA/PyTorch/GigaAM runtime for application updates.
+ARG RUNTIME_IMAGE=gigaam-ui:runtime-base
+FROM ${RUNTIME_IMAGE}
+WORKDIR /app
+COPY app.py subtitles.py /app/
+COPY templates /app/templates
+COPY README.md /app/README.md
+CMD ["python3", "app.py"]

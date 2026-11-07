@@ -27,7 +27,7 @@ RUN pip install -r /app/requirements.txt
 # Install CURRENT GigaAM from GitHub main, because PyPI 0.1.0 only exposes v1/v2 model names.
 RUN pip install git+https://github.com/salute-developers/GigaAM.git
 
-COPY app.py /app/app.py
+COPY app.py subtitles.py /app/
 COPY templates /app/templates
 COPY README.md /app/README.md
 COPY .env.example /app/.env.example

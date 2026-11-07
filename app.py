@@ -14,8 +14,9 @@ from flask import Flask, jsonify, redirect, render_template, request, send_from_
 import soundfile as sf
 import torch
 import gigaam
+from subtitles import render_srt, result_segments
 
-BASE_DIR = Path("/app")
+BASE_DIR = Path(os.getenv("GIGAAM_DATA_ROOT", "/app"))
 DATA_DIR = BASE_DIR / "data"
 INPUTS_DIR = DATA_DIR / "inputs"
 OUTPUTS_DIR = DATA_DIR / "outputs"
@@ -34,7 +35,9 @@ app.config["MAX_CONTENT_LENGTH"] = MAX_FILE_MB * 1024 * 1024
 
 _model = None
 _model_lock = threading.Lock()
+_inference_lock = threading.Lock()
 jobs = {}
+job_inputs = {}
 
 
 def now_iso():
@@ -72,7 +75,9 @@ def get_model(job_id=None):
             if _model is None:
                 if job_id:
                     set_job(job_id, stage="model_loading", progress=5, message=f"Loading model {MODEL_NAME}...")
-                _model = gigaam.load_model(MODEL_NAME)
+                model_cache = Path(os.getenv("HF_HOME", "/root/.cache/huggingface")) / "gigaam"
+                model_cache.mkdir(parents=True, exist_ok=True)
+                _model = gigaam.load_model(MODEL_NAME, download_root=str(model_cache))
                 if torch.cuda.is_available():
                     try:
                         _model = _model.cuda()
@@ -81,17 +86,6 @@ def get_model(job_id=None):
                 if job_id:
                     set_job(job_id, stage="model_loaded", progress=15, message="Model loaded")
     return _model
-
-
-def srt_time(seconds: float) -> str:
-    total_ms = int(round(seconds * 1000))
-    h = total_ms // 3600000
-    total_ms %= 3600000
-    m = total_ms // 60000
-    total_ms %= 60000
-    s = total_ms // 1000
-    ms = total_ms % 1000
-    return f"{h:02}:{m:02}:{s:02},{ms:03}"
 
 
 def save_outputs(stem: str, text: str, segments: list):
@@ -104,14 +98,17 @@ def save_outputs(stem: str, text: str, segments: list):
     txt_path.write_text(text, encoding="utf-8")
     json_path.write_text(json.dumps({"text": text, "segments": segments}, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    srt_blocks = []
-    for i, seg in enumerate(segments, start=1):
-        srt_blocks.append(f"{i}\n{srt_time(seg['start'])} --> {srt_time(seg['end'])}\n{seg['text']}\n")
-    srt_path.write_text("\n".join(srt_blocks), encoding="utf-8")
+    srt_path.write_text(render_srt(segments), encoding="utf-8")
     return txt_path.name, json_path.name, srt_path.name
 
 
 def transcribe_path(job_id: str, src_path: str):
+    # The shared model must never run concurrent inference (UI, API and batch).
+    with _inference_lock:
+        _transcribe_path(job_id, src_path)
+
+
+def _transcribe_path(job_id: str, src_path: str):
     normalized = None
     try:
         set_job(job_id, status="running", stage="preparing", progress=1, message="Preparing audio...")
@@ -126,13 +123,8 @@ def transcribe_path(job_id: str, src_path: str):
         if duration_sec <= 25:
             set_job(job_id, stage="transcribing", progress=40, message="Transcribing short audio...")
             result = model.transcribe(normalized)
-            text = getattr(result, "text", None) or str(result)
-            segments = []
-            if hasattr(result, "segments") and result.segments:
-                for seg in result.segments:
-                    segments.append({"start": float(seg.start), "end": float(seg.end), "text": str(seg.text)})
-            else:
-                segments = [{"start": 0.0, "end": duration_sec, "text": text}]
+            segments = result_segments(result, 0.0, duration_sec)
+            text = "\n".join(seg["text"] for seg in segments if seg["text"].strip())
         else:
             set_job(job_id, stage="chunking", progress=20, message="Splitting long audio into chunks...")
             audio, sr = sf.read(normalized, always_2d=False)
@@ -152,20 +144,18 @@ def transcribe_path(job_id: str, src_path: str):
                 sf.write(tmp_chunk.name, chunk, sr)
                 pct = 20 + int(((idx + 1) / total_chunks) * 70)
                 set_job(job_id, stage="transcribing", progress=pct, message=f"Transcribing chunk {idx+1}/{total_chunks}...")
-                chunk_result = model.transcribe(tmp_chunk.name)
-                chunk_text = getattr(chunk_result, "text", None) or str(chunk_result)
-                texts.append(chunk_text.strip())
-                chunk_duration = len(chunk) / sr
-                segments.append({
-                    "start": round(current_time, 3),
-                    "end": round(current_time + chunk_duration, 3),
-                    "text": chunk_text.strip(),
-                })
+                try:
+                    chunk_result = model.transcribe(tmp_chunk.name)
+                    chunk_duration = len(chunk) / sr
+                    chunk_segments = result_segments(chunk_result, current_time, chunk_duration)
+                    segments.extend(chunk_segments)
+                    texts.extend(seg["text"].strip() for seg in chunk_segments)
+                finally:
+                    safe_unlink(Path(tmp_chunk.name))
                 current_time += chunk_duration
-                safe_unlink(Path(tmp_chunk.name))
             text = "\n".join([t for t in texts if t])
 
-        txt_name, json_name, srt_name = save_outputs(Path(src_path).name, text, segments)
+        txt_name, json_name, srt_name = save_outputs(job_id, text, segments)
         set_job(
             job_id,
             status="done",
@@ -175,7 +165,9 @@ def transcribe_path(job_id: str, src_path: str):
             result={
                 "text": text,
                 "segments": segments,
-                "files": {"txt": txt_name, "json": json_name, "srt": srt_name},
+                "primary_format": "srt",
+                "timing": "model_segments_or_chunk_bounds",
+                "files": {"srt": srt_name, "txt": txt_name, "json": json_name},
             },
         )
     except Exception as e:
@@ -201,6 +193,8 @@ def api_info():
     inputs = sorted([p.name for p in INPUTS_DIR.iterdir() if p.is_file()])
     return jsonify({
         "model_name": MODEL_NAME,
+        "primary_format": "srt",
+        "api_version": 1,
         "chunk_seconds": CHUNK_SECONDS,
         "max_file_mb": MAX_FILE_MB,
         "cuda_available": torch.cuda.is_available(),
@@ -222,6 +216,7 @@ def transcribe():
     job_id = str(uuid.uuid4())
     dst = INPUTS_DIR / f"{job_id}_{Path(file.filename).name}"
     file.save(dst)
+    job_inputs[job_id] = dst
     set_job(job_id, status="queued", stage="queued", progress=0, message="Queued", filename=file.filename)
     threading.Thread(target=transcribe_path, args=(job_id, str(dst)), daemon=True).start()
     return jsonify({"job_id": job_id})
@@ -233,6 +228,26 @@ def status(job_id):
     if not job:
         return jsonify({"error": "Job not found"}), 404
     return jsonify(job)
+
+
+@app.route("/api/jobs/<job_id>", methods=["DELETE"])
+def cleanup_job(job_id):
+    job = jobs.get(job_id)
+    if job is None:
+        return jsonify({"deleted": True})
+    if job.get("status") not in ("done", "error"):
+        return jsonify({"error": "Job is still active"}), 409
+    # Delete only artifacts owned by this job, never shared cache or other meetings.
+    for filename in job.get("result", {}).get("files", {}).values():
+        path = OUTPUTS_DIR / filename
+        if path.parent.resolve() == OUTPUTS_DIR.resolve():
+            path.unlink(missing_ok=True)
+    source = job_inputs.get(job_id)
+    if source is not None:
+        source.unlink(missing_ok=True)
+    job_inputs.pop(job_id, None)
+    jobs.pop(job_id, None)
+    return jsonify({"deleted": True})
 
 
 @app.route("/download/<path:filename>")

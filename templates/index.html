@@ -36,7 +36,8 @@
   </div>
 
   <div class="card">
-    <h2>Результат</h2>
+    <h2>Субтитры встречи (SRT)</h2>
+    <p>Тайминг отсчитывается от начала записи. Если модель не возвращает границы фраз, используются границы аудиофрагментов.</p>
     <div id="downloads"></div>
     <pre id="result"></pre>
   </div>
@@ -80,14 +81,25 @@ function watchJob(jobId) {
     document.getElementById('bar').style.width = (job.progress || 0) + '%';
     if (job.status === 'done') {
       clearInterval(pollTimer);
-      document.getElementById('result').textContent = job.result.text || '';
-      const files = job.result.files || {};
-      document.getElementById('downloads').innerHTML = `
-        <p>
-          <a href="/download/${files.txt}">TXT</a> |
-          <a href="/download/${files.json}">JSON</a> |
-          <a href="/download/${files.srt}">SRT</a>
-        </p>`;
+      try {
+        const filename = job.result.files.srt;
+        const response = await fetch('/download/' + encodeURIComponent(filename));
+        if (!response.ok) throw new Error('Не удалось получить SRT');
+        const url = URL.createObjectURL(await response.blob());
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+        const cleanup = await fetch('/api/jobs/' + encodeURIComponent(jobId), {method: 'DELETE'});
+        if (!cleanup.ok) throw new Error('SRT передан браузеру, очистка сервера не выполнена');
+        document.getElementById('result').textContent = '';
+        document.getElementById('downloads').textContent = '';
+        document.getElementById('file').value = '';
+        document.getElementById('statusText').textContent = 'SRT передан браузеру для сохранения. Данные встречи на сервере очищены.';
+      } catch (error) {
+        document.getElementById('statusText').textContent = error.message;
+      }
     }
     if (job.status === 'error') {
       clearInterval(pollTimer);
