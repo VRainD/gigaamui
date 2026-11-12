@@ -1,4 +1,5 @@
 import json
+import gc
 import math
 import os
 import shutil
@@ -102,6 +103,23 @@ def save_outputs(stem: str, text: str, segments: list):
     return txt_path.name, json_path.name, srt_path.name
 
 
+def reset_recognition_cache():
+    """Caller holds _inference_lock; release all state from the previous model."""
+    global _model
+    with _model_lock:
+        _model = None
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+
+@app.route("/api/clear-recognition-cache", methods=["POST"])
+def clear_recognition_cache():
+    with _inference_lock:
+        reset_recognition_cache()
+    return jsonify({"cleared": True})
+
+
 def transcribe_path(job_id: str, src_path: str):
     # The shared model must never run concurrent inference (UI, API and batch).
     with _inference_lock:
@@ -117,6 +135,8 @@ def _transcribe_path(job_id: str, src_path: str):
         duration_sec = float(info.frames) / float(info.samplerate)
         set_job(job_id, duration_sec=duration_sec, message=f"Audio prepared, duration {duration_sec:.1f}s")
 
+        set_job(job_id, stage="clearing_cache", message="Clearing previous recognition state...")
+        reset_recognition_cache()
         model = get_model(job_id=job_id)
 
         # <=25 sec use direct official transcribe path; longer audio uses chunking workaround.

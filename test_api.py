@@ -20,6 +20,7 @@ class ApiTests(unittest.TestCase):
             spec = importlib.util.spec_from_file_location("api_under_test", Path(__file__).with_name("app.py"))
             self.module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(self.module)
+        self.module.torch.cuda = types.SimpleNamespace(is_available=lambda: False)
         self.client = self.module.app.test_client()
         self.module.get_model = lambda **kwargs: types.SimpleNamespace(transcribe=lambda path: "Текст встречи")
         self.module.sf.info = lambda path: types.SimpleNamespace(frames=32000, samplerate=16000)
@@ -55,6 +56,21 @@ class ApiTests(unittest.TestCase):
         self.assertFalse(list(self.module.INPUTS_DIR.iterdir()))
         self.assertEqual(list(self.module.OUTPUTS_DIR.iterdir()), [other])
         self.assertEqual(self.client.delete("/api/jobs/" + job_id).status_code, 200)
+
+    def test_reset_clears_model_and_cuda_before_each_recording(self):
+        events = []
+        self.module.torch.cuda = types.SimpleNamespace(
+            is_available=lambda: True, empty_cache=lambda: events.append("clear"))
+        self.module._model = object()
+        response = self.client.post("/api/clear-recognition-cache")
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(self.module._model)
+        self.module.get_model = lambda **kwargs: types.SimpleNamespace(
+            transcribe=lambda path: events.append("transcribe") or "Текст")
+        for job_id in ("first", "second"):
+            self.module.transcribe_path(job_id, "stub.wav")
+            self.assertEqual(self.module.jobs[job_id]["status"], "done")
+        self.assertEqual(events, ["clear", "clear", "transcribe", "clear", "transcribe"])
 
     def test_active_job_cannot_be_cleaned(self):
         self.module.set_job("active", status="running")

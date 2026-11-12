@@ -24,7 +24,9 @@
 
   <div class="card">
     <h2>Распознавание</h2>
-    <input type="file" id="file">
+    <input type="file" id="file" accept="audio/*" hidden onchange="document.getElementById('selectedFile').textContent = this.files[0]?.name || 'Файл не выбран'">
+    <button onclick="document.getElementById('file').click()">Загрузить аудиозапись для распознавания</button>
+    <span id="selectedFile">Файл не выбран</span>
     <div class="row">
       <button onclick="startUpload()">Запустить</button>
       <button onclick="clearTarget('outputs')">Очистить outputs</button>
@@ -96,6 +98,7 @@ function watchJob(jobId) {
         document.getElementById('result').textContent = '';
         document.getElementById('downloads').textContent = '';
         document.getElementById('file').value = '';
+        document.getElementById('selectedFile').textContent = 'Файл не выбран';
         document.getElementById('statusText').textContent = 'SRT передан браузеру для сохранения. Данные встречи на сервере очищены.';
       } catch (error) {
         document.getElementById('statusText').textContent = error.message;
