@@ -1,129 +1,26 @@
-<!doctype html>
-<html lang="ru">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>GigaAM UI</title>
-  <style>
-    body { font-family: Arial, sans-serif; margin: 24px; background: #111; color: #eee; }
-    .card { background: #1b1b1b; padding: 16px; border-radius: 12px; margin-bottom: 16px; }
-    button { padding: 10px 14px; border-radius: 8px; border: 0; cursor: pointer; }
-    input[type=file] { margin-bottom: 12px; }
-    pre { white-space: pre-wrap; word-break: break-word; background: #0c0c0c; padding: 12px; border-radius: 8px; }
-    .progress { width: 100%; background: #333; border-radius: 8px; overflow: hidden; height: 18px; }
-    .bar { height: 18px; width: 0%; background: #4caf50; transition: width .3s; }
-    .row { display:flex; gap:12px; flex-wrap:wrap; }
-    a { color:#7cc4ff; }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <h1>GigaAM UI</h1>
-    <div id="info">Loading...</div>
-  </div>
-
-  <div class="card">
-    <h2>Распознавание</h2>
-    <input type="file" id="file" accept="audio/*" hidden onchange="document.getElementById('selectedFile').textContent = this.files[0]?.name || 'Файл не выбран'">
-    <button onclick="document.getElementById('file').click()">Загрузить аудиозапись для распознавания</button>
-    <span id="selectedFile">Файл не выбран</span>
-    <div class="row">
-      <button onclick="startUpload()">Запустить</button>
-      <button onclick="clearTarget('outputs')">Очистить outputs</button>
-      <button onclick="clearTarget('logs')">Очистить logs</button>
-      <button onclick="clearTarget('cache')">Очистить HF cache</button>
-    </div>
-    <p id="statusText">Ожидание</p>
-    <div class="progress"><div class="bar" id="bar"></div></div>
-  </div>
-
-  <div class="card">
-    <h2>Субтитры встречи (SRT)</h2>
-    <p>Тайминг отсчитывается от начала записи. Если модель не возвращает границы фраз, используются границы аудиофрагментов.</p>
-    <div id="downloads"></div>
-    <pre id="result"></pre>
-  </div>
-
+<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>GigaAM — Распознавание записей</title><style>
+*{box-sizing:border-box}body{font:15px system-ui;color:#192b43;background:#f3f6fa;max-width:1500px;margin:auto;padding:24px}h1{font-size:28px}h2{font-size:21px;margin:0 0 16px}.card{background:white;border:1px solid #d9e2ec;border-radius:12px;padding:22px;margin:18px 0}.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.row h2{margin:0 auto 0 0}button,select,a{font:inherit;border:1px solid #bccfd7;border-radius:7px;padding:9px 13px;background:white;color:#17635f;cursor:pointer}button:hover,a:hover{background:#e5f5f2}button:disabled{opacity:.45;cursor:default}.primary{background:#00857e;color:white}.muted{color:#64748b;font-size:14px}.drop{border:2px dashed #b7c9d6;padding:26px;text-align:center;border-radius:8px}.scroll{overflow-x:auto}table{width:100%;border-collapse:collapse;margin-top:20px}td,th{text-align:left;padding:12px;border-bottom:1px solid #e1e8ef}th{background:#f1f5f9}td{overflow-wrap:anywhere}progress{accent-color:#00857e;width:110px}pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:420px;overflow:auto;background:#f5f8fa;padding:18px;border-radius:8px;min-height:150px;line-height:1.6}a{display:inline-block;text-decoration:none;margin:3px}.console{background:#182536;color:#dbe8ef}.console pre{background:#101c2b;min-height:100px;max-height:240px}.tabs button[aria-selected=true]{background:#00857e;color:white}input[type=checkbox]{accent-color:#00857e;width:17px;height:17px}.danger{color:#a43641}button:focus-visible,a:focus-visible{outline:3px solid #39b8aa}@media(max-width:700px){body{padding:10px}td,th{padding:8px}}
+</style><header><div class="row"><h1>GigaAM / Распознавание записей</h1><span id="health" role="status">Подключение…</span></div><p id="summary" class="muted"></p><details><summary>Информация о сервисе (JSON)</summary><pre id="info"></pre></details></header><main>
+<section class="card"><div id="drop" class="drop"><h2>Перетащите аудио или видео</h2><button id="choose" class="primary">Выбрать файлы</button><input id="files" type="file" multiple accept="audio/*,video/*,.wav,.mp3,.m4a,.mp4,.mkv,.mov,.avi,.webm,.flac,.ogg" hidden><p class="muted">Можно выбрать несколько файлов. У видео распознаётся звуковая дорожка.</p></div></section>
+<section class="card"><div class="row"><h2>Очередь обработки</h2><button id="single">Запустить выбранный</button><button id="batch" class="primary">Пакетная обработка</button></div><p class="muted">Отметьте нужные записи. Обработка выполняется последовательно в указанном порядке.</p><div class="scroll"><table><thead><tr><th><input id="all" type="checkbox" aria-label="Выбрать все"></th><th>Файл</th><th>Статус</th><th>Прогресс</th><th>Порядок</th><th>Результат</th></tr></thead><tbody id="queue"></tbody></table></div><p id="status" role="status">Ожидание файлов</p></section>
+<section class="card"><div class="row"><h2>Результат</h2><select id="record" aria-label="Выбор результата"></select><button id="copy">Копировать</button></div><div id="downloads"></div><div class="row tabs" role="tablist"><button data-tab="text" role="tab" aria-selected="true">Текст</button><button data-tab="srt" role="tab" aria-selected="false">Субтитры SRT</button><button data-tab="json" role="tab" aria-selected="false">JSON</button></div><p class="muted">Тайминг от начала записи. При отсутствии границ фраз используются границы аудиофрагментов.</p><pre id="result">Здесь появится результат распознавания.</pre></section>
+<section class="card row"><h2>Очистка данных</h2><button data-clear="outputs" class="danger">Очистить outputs</button><button data-clear="logs">Очистить logs</button><button data-clear="cache">Очистить HF cache</button><span class="muted">outputs — результаты · logs — журналы · HF cache — файлы моделей</span></section>
+<section class="card console"><div class="row"><h2>Консоль событий</h2><select id="filter" aria-label="Фильтр консоли"><option value="all">Все события</option><option value="error">Ошибки</option></select><button id="copyLog">Копировать</button><button id="collapse">Свернуть</button></div><pre id="log" role="log"></pre><span class="muted">История событий этой страницы: загрузка, этапы обработки и ошибки.</span></section></main>
 <script>
-let pollTimer = null;
-
-async function loadInfo() {
-  const res = await fetch('/api/info');
-  const data = await res.json();
-  document.getElementById('info').innerHTML = '<pre>' + JSON.stringify(data, null, 2) + '</pre>';
-}
-
-async function startUpload() {
-  const fileInput = document.getElementById('file');
-  if (!fileInput.files.length) {
-    alert('Выбери файл');
-    return;
-  }
-  const form = new FormData();
-  form.append('file', fileInput.files[0]);
-  document.getElementById('statusText').textContent = 'Загрузка файла...';
-  document.getElementById('bar').style.width = '1%';
-  document.getElementById('result').textContent = '';
-  document.getElementById('downloads').innerHTML = '';
-  const res = await fetch('/api/transcribe', { method:'POST', body: form });
-  const data = await res.json();
-  if (!data.job_id) {
-    document.getElementById('statusText').textContent = JSON.stringify(data);
-    return;
-  }
-  watchJob(data.job_id);
-}
-
-function watchJob(jobId) {
-  clearInterval(pollTimer);
-  pollTimer = setInterval(async () => {
-    const res = await fetch('/api/status/' + jobId);
-    const job = await res.json();
-    document.getElementById('statusText').textContent = (job.stage || '') + ' | ' + (job.message || '');
-    document.getElementById('bar').style.width = (job.progress || 0) + '%';
-    if (job.status === 'done') {
-      clearInterval(pollTimer);
-      try {
-        const filename = job.result.files.srt;
-        const response = await fetch('/download/' + encodeURIComponent(filename));
-        if (!response.ok) throw new Error('Не удалось получить SRT');
-        const url = URL.createObjectURL(await response.blob());
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = filename;
-        link.click();
-        setTimeout(() => URL.revokeObjectURL(url), 60000);
-        const cleanup = await fetch('/api/jobs/' + encodeURIComponent(jobId), {method: 'DELETE'});
-        if (!cleanup.ok) throw new Error('SRT передан браузеру, очистка сервера не выполнена');
-        document.getElementById('result').textContent = '';
-        document.getElementById('downloads').textContent = '';
-        document.getElementById('file').value = '';
-        document.getElementById('selectedFile').textContent = 'Файл не выбран';
-        document.getElementById('statusText').textContent = 'SRT передан браузеру для сохранения. Данные встречи на сервере очищены.';
-      } catch (error) {
-        document.getElementById('statusText').textContent = error.message;
-      }
-    }
-    if (job.status === 'error') {
-      clearInterval(pollTimer);
-      document.getElementById('result').textContent = (job.message || '') + '\n\n' + (job.traceback || '');
-      document.getElementById('bar').style.width = '100%';
-    }
-  }, 1500);
-}
-
-async function clearTarget(target) {
-  const res = await fetch('/api/clear', {
-    method:'POST',
-    headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({target})
-  });
-  const data = await res.json();
-  alert(JSON.stringify(data));
-  loadInfo();
-}
-
-loadInfo();
-</script>
-</body>
-</html>
+'use strict';
+const $=id=>document.getElementById(id);let rows=[],busy=false,tab='text',events=[],counter=0,view=0;
+const labels={ready:'Готов к запуску',uploading:'Загрузка',queued:'В очереди',running:'Обработка',done:'Завершено',error:'Ошибка'};
+function log(message,error=false){events.push({message:new Date().toLocaleTimeString()+'  '+message,error});events=events.slice(-500);renderLog()}
+function renderLog(){$('log').textContent=events.filter(e=>$('filter').value!=='error'||e.error).map(e=>e.message).join('\n');$('log').scrollTop=$('log').scrollHeight}
+async function api(url,options){const r=await fetch(url,options);let d;try{d=await r.json()}catch{throw Error('Некорректный ответ сервера: '+r.status)}if(!r.ok)throw Error(d.error||d.message||'HTTP '+r.status);return d}
+async function info(){try{const d=await api('/api/info');$('info').textContent=JSON.stringify(d,null,2);$('summary').textContent=`Модель: ${d.model_name} · Устройство: ${d.gpu_name||d.device} · Лимит файла: ${d.max_file_mb} МБ`;$('health').textContent='● Сервис доступен'}catch(e){$('health').textContent='Нет связи с сервисом';log(e.message,true)}}
+function link(format,name){const a=document.createElement('a');a.textContent=format.toUpperCase();a.href='/download/'+encodeURIComponent(name);a.download=name;return a}
+function syncAll(){$('all').checked=rows.length>0&&rows.every(r=>r.selected);$('all').indeterminate=rows.some(r=>r.selected)&&!$('all').checked}
+function render(){const body=$('queue');body.replaceChildren();for(const row of rows){const tr=document.createElement('tr');const cell=()=>{const td=document.createElement('td');tr.append(td);return td};const cb=document.createElement('input');cb.type='checkbox';cb.checked=row.selected;cb.disabled=busy;cb.setAttribute('aria-label','Выбрать '+row.file.name);cb.onchange=()=>{row.selected=cb.checked;syncAll()};cell().append(cb);cell().textContent=row.file.name+' ('+(row.file.size/1048576).toFixed(1)+' МБ)';const state=cell();state.textContent=labels[row.status]||row.status;state.title=row.message||'';const p=document.createElement('progress');p.max=100;p.value=row.progress;p.setAttribute('aria-label','Прогресс '+row.file.name);cell().append(p,document.createTextNode(' '+row.progress+'%'));const order=cell();for(const delta of [-1,1]){const b=document.createElement('button');b.textContent=delta<0?'↑':'↓';b.disabled=busy||!rows[rows.indexOf(row)+delta];b.onclick=()=>{const i=rows.indexOf(row);[rows[i],rows[i+delta]]=[rows[i+delta],rows[i]];render()};order.append(b)}const downloads=cell();if(row.result)for(const [f,n]of Object.entries(row.result.files||{}))downloads.append(link(f,n));body.append(tr)}for(const id of ['single','batch','choose','all'])$(id).disabled=busy;document.querySelectorAll('[data-clear]').forEach(b=>b.disabled=busy);syncAll()}
+function add(files){if(busy)return;for(const file of files)rows.push({id:String(++counter),file,selected:true,status:'ready',progress:0});render();$('status').textContent='Файлов в очереди: '+rows.length}
+function results(){const old=$('record').value;$('record').replaceChildren();for(const row of rows.filter(r=>r.result||r.status==='error')){const o=document.createElement('option');o.value=row.id;o.textContent=row.file.name;$('record').append(o)}if(rows.some(r=>r.id===old&&(r.result||r.status==='error')))$('record').value=old;show()}
+async function show(){const version=++view;const row=rows.find(r=>r.id===$('record').value);$('downloads').replaceChildren();if(!row)return;if(!row.result){$('result').textContent=row.message||'Ошибка';return}for(const[f,n]of Object.entries(row.result.files||{}))$('downloads').append(link(f,n));$('result').textContent=tab==='json'?JSON.stringify(row.result,null,2):row.result.text||'';if(tab==='srt'&&row.result.files?.srt){$('result').textContent='Загрузка SRT…';try{const r=await fetch('/download/'+encodeURIComponent(row.result.files.srt));if(!r.ok)throw Error('Не удалось загрузить SRT');const text=await r.text();if(version===view)$('result').textContent=text}catch(e){if(version===view)$('result').textContent=e.message;log(e.message,true)}}}
+async function run(single){if(busy)return;const selected=rows.filter(r=>r.selected&&r.status!=='done');if(!selected.length){$('status').textContent='Выберите файлы для обработки';return}if(single&&selected.length!==1){$('status').textContent='Выберите один файл либо нажмите «Пакетная обработка»';return}busy=true;render();try{for(const row of selected){try{row.status='uploading';render();log('Загрузка: '+row.file.name);const form=new FormData();form.append('file',row.file);const data=await api('/api/transcribe',{method:'POST',body:form});if(!data.job_id)throw Error('Сервер не вернул job_id');row.jobId=data.job_id;let previous='';while(true){const job=await api('/api/status/'+encodeURIComponent(row.jobId));row.status=job.status;row.progress=Math.max(0,Math.min(100,Number(job.progress)||0));row.message=job.message||'';$('status').textContent=row.file.name+' · '+(job.stage||'')+' · '+row.message;const state=(job.stage||'')+' '+row.message;if(state!==previous){log(row.file.name+' · '+state,job.status==='error');previous=state}render();if(job.status==='done'){row.result=job.result;results();break}if(job.status==='error')throw Error((job.message||'Ошибка')+'\n'+(job.traceback||''));await new Promise(resolve=>setTimeout(resolve,1500))}}catch(e){row.status='error';row.message=e.message;log(row.file.name+' · '+e.message,true);results();render()}}$('status').textContent='Обработка завершена. Результаты доступны ниже.'}finally{busy=false;render();info()}}
+async function clear(target){if(busy)return;const names={outputs:'все серверные результаты распознавания',logs:'серверные журналы',cache:'файлы кэша моделей (потребуется повторная загрузка)'};if(!confirm('Удалить '+names[target]+'?'))return;busy=true;render();try{const d=await api('/api/clear',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target})});log('Очистка '+target+': '+JSON.stringify(d));if(target==='outputs'){for(const r of rows){r.result=null;if(r.status==='done'){r.status='ready';r.progress=0}}results();$('result').textContent='Серверные результаты удалены.';$('downloads').replaceChildren()}await info()}catch(e){log(e.message,true);$('status').textContent=e.message}finally{busy=false;render()}}
+$('choose').onclick=()=>$('files').click();$('files').onchange=()=>{add($('files').files);$('files').value=''};$('all').onchange=()=>{rows.forEach(r=>r.selected=$('all').checked);render()};$('single').onclick=()=>run(true);$('batch').onclick=()=>run(false);$('record').onchange=show;document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;document.querySelectorAll('[data-tab]').forEach(t=>t.setAttribute('aria-selected',String(t===b)));show()});document.querySelectorAll('[data-clear]').forEach(b=>b.onclick=()=>clear(b.dataset.clear));$('filter').onchange=renderLog;$('collapse').onclick=()=>{$('log').hidden=!$('log').hidden;$('collapse').textContent=$('log').hidden?'Развернуть':'Свернуть'};async function copy(text){try{await navigator.clipboard.writeText(text);log('Скопировано в буфер обмена')}catch(e){log('Копирование недоступно: '+e.message,true)}}$('copy').onclick=()=>copy($('result').textContent);$('copyLog').onclick=()=>copy($('log').textContent);$('drop').ondragover=e=>e.preventDefault();$('drop').ondrop=e=>{e.preventDefault();add(e.dataTransfer.files)};render();info();log('Интерфейс готов. Выберите записи для распознавания.');
+</script></html>

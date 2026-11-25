@@ -27,7 +27,7 @@ for p in [INPUTS_DIR, OUTPUTS_DIR, LOGS_DIR]:
 
 MODEL_NAME = os.getenv("MODEL_NAME", "v3_e2e_rnnt")
 CHUNK_SECONDS = int(os.getenv("CHUNK_SECONDS", "20"))
-MAX_FILE_MB = int(os.getenv("MAX_FILE_MB", "1000"))
+MAX_FILE_MB = int(os.getenv("MAX_FILE_MB", "5120"))
 FLASK_HOST = os.getenv("FLASK_HOST", "0.0.0.0")
 FLASK_PORT = int(os.getenv("FLASK_PORT", "8000"))
 

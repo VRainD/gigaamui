@@ -9,7 +9,7 @@ services:
       TRANSFORMERS_CACHE: /root/.cache/huggingface
       MODEL_NAME: ${MODEL_NAME:-v3_e2e_rnnt}
       CHUNK_SECONDS: ${CHUNK_SECONDS:-20}
-      MAX_FILE_MB: ${MAX_FILE_MB:-1000}
+      MAX_FILE_MB: ${MAX_FILE_MB:-5120}
       FLASK_HOST: 0.0.0.0
       FLASK_PORT: 8000
     volumes:
