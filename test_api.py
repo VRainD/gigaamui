@@ -21,6 +21,8 @@ class ApiTests(unittest.TestCase):
             self.module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(self.module)
         self.module.torch.cuda = types.SimpleNamespace(is_available=lambda: False)
+        self.module.torch.__version__ = 'test'
+        self.module.torch.version = types.SimpleNamespace(cuda=None)
         self.client = self.module.app.test_client()
         self.module.get_model = lambda **kwargs: types.SimpleNamespace(transcribe=lambda path: "Текст встречи")
         self.module.sf.info = lambda path: types.SimpleNamespace(frames=32000, samplerate=16000)
@@ -76,6 +78,22 @@ class ApiTests(unittest.TestCase):
         self.module.set_job("active", status="running")
         self.assertEqual(self.client.delete("/api/jobs/active").status_code, 409)
         self.assertIn("active", self.module.jobs)
+
+    def test_workspace_clears_inputs_outputs_and_history(self):
+        (self.module.INPUTS_DIR / "old.wav").write_bytes(b"audio")
+        (self.module.OUTPUTS_DIR / "old.txt").write_text("old")
+        self.module.set_job("old", status="done")
+        self.assertEqual(self.client.post("/api/clear", json={"target": "workspace"}).status_code, 200)
+        self.assertEqual(self.client.get("/api/info").json["inputs"], [])
+        self.assertEqual(list(self.module.OUTPUTS_DIR.iterdir()), [])
+        self.assertEqual(self.module.jobs, {})
+
+    def test_clear_rejects_active_jobs_and_preserves_files(self):
+        path = self.module.INPUTS_DIR / "active.wav"
+        path.write_bytes(b"audio")
+        self.module.set_job("active", status="queued")
+        self.assertEqual(self.client.post("/api/clear", json={"target": "workspace"}).status_code, 409)
+        self.assertTrue(path.exists())
 
     def test_missing_file_and_unknown_job(self):
         self.assertEqual(self.client.post("/api/transcribe").status_code, 400)

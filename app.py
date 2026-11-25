@@ -299,25 +299,39 @@ def batch():
 
 @app.route("/api/clear", methods=["POST"])
 def clear():
-    target = request.json.get("target", "outputs")
+    target = (request.get_json(silent=True) or {}).get("target", "outputs")
     mapping = {
-        "outputs": OUTPUTS_DIR,
-        "logs": LOGS_DIR,
-        "cache": Path("/root/.cache/huggingface"),
+        "inputs": [INPUTS_DIR],
+        "outputs": [OUTPUTS_DIR],
+        "workspace": [INPUTS_DIR, OUTPUTS_DIR],
+        "logs": [LOGS_DIR],
+        "cache": [Path(os.getenv("HF_HOME", "/root/.cache/huggingface"))],
     }
-    path = mapping.get(target)
-    if path is None:
+    paths = mapping.get(target)
+    if paths is None:
         return jsonify({"error": "Invalid target"}), 400
-    count = 0
-    path.mkdir(parents=True, exist_ok=True)
-    for item in path.iterdir():
-        if item.is_file():
-            item.unlink(missing_ok=True)
-            count += 1
-        elif item.is_dir():
-            shutil.rmtree(item, ignore_errors=True)
-            count += 1
-    return jsonify({"target": target, "removed": count})
+    if not _inference_lock.acquire(blocking=False):
+        return jsonify({"error": "Recognition is active"}), 409
+    try:
+        if any(job.get("status") in ("queued", "running") for job in list(jobs.values())):
+            return jsonify({"error": "Recognition is active"}), 409
+        count = 0
+        for path in paths:
+            path.mkdir(parents=True, exist_ok=True)
+            for item in path.iterdir():
+                if item.is_file() or item.is_symlink():
+                    item.unlink(missing_ok=True)
+                    count += 1
+                elif item.is_dir():
+                    shutil.rmtree(item)
+                    count += 1
+        if target in ("inputs", "workspace"):
+            job_inputs.clear()
+        if target == "workspace":
+            jobs.clear()
+        return jsonify({"target": target, "removed": count})
+    finally:
+        _inference_lock.release()
 
 
 if __name__ == "__main__":
