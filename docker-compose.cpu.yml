@@ -1,0 +1,24 @@
+# Standalone configuration: do not combine with the NVIDIA compose file.
+services:
+  gigaam-ui:
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: Dockerfile.cpu
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      HF_HOME: /root/.cache/huggingface
+      MODEL_NAME: ${MODEL_NAME:-v3_e2e_rnnt}
+      CHUNK_SECONDS: ${CHUNK_SECONDS:-20}
+      MAX_FILE_MB: ${MAX_FILE_MB:-5120}
+      FLASK_HOST: 0.0.0.0
+      FLASK_PORT: 8000
+      CUDA_VISIBLE_DEVICES: ""
+    volumes:
+      - ./data:/app/data
+      - gigaam_cpu_cache:/root/.cache/huggingface
+    restart: unless-stopped
+
+volumes:
+  gigaam_cpu_cache:
